@@ -1,3 +1,4 @@
+//// Terminado
 #include "nfc_module.h"
 #include "sd_module.h"
 #include "interface.h" 
@@ -135,7 +136,6 @@ void flujoCapturaRFID(bool &dentroDeOpcion) {
         bool raizSeleccionada = false;
 
         while (!raizSeleccionada) {
-                // Lógica de navegación DIGITAL (LOW significa presionado)
             if (digitalRead(JOY_UP) == LOW) { if (indexRaiz > 0) indexRaiz--; delay(200); }
             if (digitalRead(JOY_DOWN) == LOW) { if (indexRaiz < ITEMS_RAIZ - 1) indexRaiz++; delay(200); }
             if (digitalRead(JOY_SW) == LOW) { raizSeleccionada = true; delay(300); }
@@ -176,12 +176,42 @@ void flujoCapturaRFID(bool &dentroDeOpcion) {
             if(leida) idListoParaUsar = true;
 
         } else if (indexRaiz == 1) {
-            // LÓGICA DE CARGA DESDE SD (Requiere integrar lectura de archivos)
-            u8g2.clearBuffer();
-            u8g2.drawStr(10, 30, "Cargando de SD...");
-            u8g2.sendBuffer();
-            delay(1500);
-            if (uidLongitud > 0) idListoParaUsar = true;
+            // SOLUCIÓN 1: Llamar a la función selectora que ya tienes en sd_module
+            String archivoSeleccionado = seleccionarArchivoSD("NFC");
+            
+            if (archivoSeleccionado != "") {
+                // Abrir el archivo elegido para recuperar el UID guardado
+                File f = SD.open("/NFC/" + archivoSeleccionado);
+                if (f) {
+                    String contenido = "";
+                    while (f.available()) {
+                        contenido += (char)f.read();
+                    }
+                    f.close();
+                    
+                    // Limpiar saltos de línea o espacios
+                    contenido.trim(); 
+                    
+                    // Si el archivo es un volcado completo, buscamos la línea "UID: "
+                    if (contenido.startsWith("UID: ")) {
+                        uidString = contenido.substring(5, contenido.indexOf('\n'));
+                        uidString.trim();
+                    } else {
+                        // Si solo guardaste el string plano del UID
+                        uidString = contenido;
+                    }
+                    
+                    // Reconstruir artificialmente la longitud para habilitar el menú de acción
+                    uidLongitud = uidString.length() / 2; 
+                    idListoParaUsar = true;
+                }
+            } else {
+                u8g2.clearBuffer();
+                u8g2.drawStr(10, 30, "No se selecciono");
+                u8g2.drawStr(10, 45, "ningun archivo.");
+                u8g2.sendBuffer();
+                delay(1500);
+            }
         }
 
         if (idListoParaUsar) {
@@ -189,8 +219,10 @@ void flujoCapturaRFID(bool &dentroDeOpcion) {
             const int ITEMS_ACCION = 5;
             String opcionesAccion[ITEMS_ACCION] = {"1. Volcar Sectores", "2. Clonar a Virgen", "3. Guardar UID a SD", "4. Emular UID", "5. Cerrar"};
             
+            // SOLUCIÓN 2: Sacar la inicialización del índice FUERA del bucle while(!accionSel)
+            int indexAccion = 0; 
+
             while (enMenuAccion) {
-                int indexAccion = 0;
                 bool accionSel = false;
                 
                 while (!accionSel) {
@@ -199,6 +231,7 @@ void flujoCapturaRFID(bool &dentroDeOpcion) {
                     if (digitalRead(JOY_SW) == LOW) { accionSel = true; delay(300); }
 
                     u8g2.clearBuffer();
+                    u8g2.setFont(u8g2_font_6x12_tr); // Asegurar fuente correcta
                     u8g2.setCursor(0, 10);
                     u8g2.print("TGT: " + uidString);
                     u8g2.drawLine(0, 14, 128, 14);

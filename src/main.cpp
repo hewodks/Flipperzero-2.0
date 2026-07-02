@@ -6,6 +6,7 @@
 #include "ir_module.h"
 #include "nfc_module.h"
 #include "bt_module.h"
+#include "conexion_api.h"
 
 const int NUM_ITEMS = 6; // Subimos a 6 opciones
 int indiceActual = 0;
@@ -37,6 +38,8 @@ void setup() {
   setupIR(); 
   setupWiFi(); 
   setupBluetooth(); 
+  //iniciarWiFi();
+  
   //setupCC1101();
 }
 

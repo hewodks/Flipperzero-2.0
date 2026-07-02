@@ -1,6 +1,7 @@
 #include "sd_module.h"
 #include "interface.h"
 #include "joystick_module.h"
+#include "wifi_module.h"
 #include <U8g2lib.h> 
 
 // Nuevas librerías para el servidor
@@ -29,6 +30,7 @@ bool setupSD() {
     if (!SD.exists("/IR")) SD.mkdir("/IR");
     if (!SD.exists("/CC1101")) SD.mkdir("/CC1101");
     if (!SD.exists("/WIFI")) SD.mkdir("/WIFI");
+    if (!SD.exists("/BLUT")) SD.mkdir("/BLUT");
 
     return true;
 }
@@ -159,6 +161,32 @@ String seleccionarArchivoSD(String carpeta) {
             delay(250);
             return archivos[sel];
         }
+    }
+}
+
+void guardarLogSniffer(String mac, String ssid) {
+    // Abre (o crea) un archivo exclusivo para el Sniffer de Probes
+    File file = SD.open("/WIFI/sniffer_probes.txt", FILE_APPEND);
+    if (file) {
+        file.print("["); file.print(millis() / 1000); file.print("s] ");
+        file.print("MAC: "); file.print(mac);
+        file.print(" -> Buscando: "); file.println(ssid);
+        file.close();
+    }
+}
+
+//
+///    BY:HK
+//
+void guardarLogBLE(String mac, int rssi, String nombre) {
+    // Abre o crea el archivo exclusivo de logs de Bluetooth
+    File file = SD.open("/BLUT/sniffer_ble.txt", FILE_APPEND);
+    if (file) {
+        file.print("["); file.print(millis() / 1000); file.print("s] ");
+        file.print("MAC: "); file.print(mac);
+        file.print(" | RSSI: "); file.print(rssi);
+        file.print(" dBm | Nombre: "); file.println(nombre);
+        file.close();
     }
 }
 

@@ -6,6 +6,7 @@
 #include <BLEAdvertisedDevice.h>
 #include <esp_bt.h> 
 #include <esp_gap_ble_api.h>
+#include "sd_module.h"
 #include "bt_module.h"
 #include "interface.h"
 #include "joystick_module.h"
@@ -21,11 +22,23 @@ extern U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2;
 int dispositivosEncontrados = 0;
 String ultimaMacBLE = "Ninguna";
 
+// Variables de control para el puente BLE -> SD
+volatile bool nuevoDispositivo = false;
+String temporalNombre = "";
+int temporalRSSI = 0;
+
+/////// by: hk
 class EscanerCallbacks: public BLEAdvertisedDeviceCallbacks {
     void onResult(BLEAdvertisedDevice advertisedDevice) {
         dispositivosEncontrados++;
         ultimaMacBLE = String(advertisedDevice.getAddress().toString().c_str());
         Serial.printf("Encontrado: %s \n", ultimaMacBLE.c_str());
+
+        // Extraemos los datos en variables globales interinas
+        temporalRSSI = advertisedDevice.getRSSI();
+        temporalNombre = advertisedDevice.haveName() ? String(advertisedDevice.getName().c_str()) : "Desconocido";
+
+        nuevoDispositivo = true; // Avisamos al bucle principal que hay datos listos
     }
 };
 
@@ -92,6 +105,15 @@ void scanBLENetworks() {
     unsigned long ultimaAct = millis();
 
     while(escaneando) {
+        // --- NUEVA LÓGICA DE GUARDADO ---
+        if (nuevoDispositivo) {
+            nuevoDispositivo = false; // Reseteamos la bandera de inmediato
+            
+            // Llamamos a la función de sd_module.cpp utilizando los datos recolectados
+            guardarLogBLE(ultimaMacBLE, temporalRSSI, temporalNombre);
+        }
+
+        // Actualización de la pantalla OLED (Cada 1 segundo)
         if (millis() - ultimaAct > 1000) {
             u8g2.clearBuffer();
             u8g2.setFont(u8g2_font_6x12_tr);
@@ -102,11 +124,13 @@ void scanBLENetworks() {
             u8g2.sendBuffer();
             ultimaAct = millis();
         }
+
+        // Detectar salida
         if (digitalRead(JOY_SW) == LOW) {
             delay(200);
             escaneando = false;
         }
-        delay(10);
+        delay(1); // Reducido a 1ms para no perder eventos de captura veloces
     }
     pBLEScan->stop();
     pBLEScan->clearResults();

@@ -13,6 +13,7 @@ bool setupSD();
 // --- LÓGICA DE GUARDADO CON CARPETAS ---
 void guardarDato(String categoria, String nombre, String contenido);
 void guardarCredencialesWiFi(String datos); 
+void guardarLogBLE(String mac, int rssi, String nombre);
 
 // --- DASHBOARD Y GESTIÓN ---
 void flujoSDManager(bool &dentroDeOpcion);

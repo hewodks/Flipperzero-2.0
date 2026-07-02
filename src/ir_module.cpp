@@ -1,8 +1,10 @@
+//// Terminado
 #include "ir_module.h"
 #include "sd_module.h" 
 #include "interface.h"
 #include "joystick_module.h"
 #include "joystick_module.h"
+#include "conexion_api.h"
 
 #include <ir_Gree.h>    
 #include <ir_Midea.h>   
@@ -53,7 +55,7 @@ bool esperarO_Salir(int tiempoMs) {
 
 void flujoInfrarrojo(bool &dentroDeOpcion) {
     bool enMenuIR = true; int subIndice = 0; const int SUB_ITEMS = 6; 
-    String subMenu[SUB_ITEMS] = {"1. Clonar/Sniffer", "2. Emular Guardados", "3. TV Rafaga", "4. TV x Marcas", "5. AC x Marcas", "6. Regresar"};
+    String subMenu[SUB_ITEMS] = {"1. Clonar/Sniffer", "2. Emular Guardados", "3. TV Rafaga", "4. TV/Marcas", "5. AC/Marcas", "6. Regresar"};
 
     while (enMenuIR) {
         dibujarPantalla(subIndice, false, subMenu, SUB_ITEMS);
@@ -188,6 +190,7 @@ void menuAccionAC(int marcaID) {
 }
 
 void ejecutarAtaqueAC(int marcaID, int accionAC) {
+    
     bool encender = true;
 
     if (accionAC == 1) {
@@ -209,42 +212,62 @@ void ejecutarAtaqueAC(int marcaID, int accionAC) {
         u8g2.drawStr(0, 15, "APAGANDO...");
     }
     u8g2.sendBuffer();
+    
+    String nombreMarca = "Ninguna";
+    //unsigned long tiempoInicio = millis();
 
-    if (marcaID == 0) { 
+    if (marcaID == 0) {
+        nombreMarca = "Green";
         IRGreeAC ac(IR_TX_PIN); ac.begin();
         if(encender) { ac.on(); ac.setTemp(tempActualAC); ac.setMode(kGreeCool); ac.setFan(kGreeFanMax); } else ac.off();
         ac.send();
     } 
     else if (marcaID == 1) { 
+        nombreMarca = "Midea";
         IRMideaAC ac(IR_TX_PIN); ac.begin();
         if(encender) { ac.on(); ac.setTemp(tempActualAC); ac.setMode(kMideaACCool); ac.setFan(kMideaACFanHigh); } else ac.off();
         ac.send();
     } 
-    else if (marcaID == 2) { 
+    else if (marcaID == 2) {
+        nombreMarca = "Lg";
         IRLgAc ac(IR_TX_PIN); ac.begin();
         if(encender) { ac.on(); ac.setTemp(tempActualAC); ac.setMode(kLgAcCool); ac.setFan(kLgAcFanHigh); } else ac.off();
         ac.send();
     } 
-    else if (marcaID == 3) { 
+    else if (marcaID == 3) {
+        nombreMarca = "Samsung"; 
         IRSamsungAc ac(IR_TX_PIN); ac.begin();
         if(encender) { ac.on(); ac.setTemp(tempActualAC); ac.setMode(kSamsungAcCool); ac.setFan(kSamsungAcFanHigh); } else ac.off();
         ac.send();
     }
     else if (marcaID == 4) { 
+        nombreMarca = "Daikin";
         IRDaikinESP ac(IR_TX_PIN); ac.begin();
         if(encender) { ac.on(); ac.setTemp(tempActualAC); ac.setMode(kDaikinCool); ac.setFan(kDaikinFanAuto); } else ac.off();
         ac.send();
     }
     else if (marcaID == 5) { 
+        nombreMarca = "Mitsubishi";
         IRMitsubishiAC ac(IR_TX_PIN); ac.begin();
         if(encender) { ac.on(); ac.setTemp(tempActualAC); ac.setMode(kMitsubishiAcCool); ac.setFan(kMitsubishiAcFanMax); } else ac.off();
         ac.send();
     }
-    else if (marcaID == 6) { 
+    else if (marcaID == 6) {
+        nombreMarca = "Toshiba"; 
         IRToshibaAC ac(IR_TX_PIN); ac.begin();
         if(encender) { ac.on(); ac.setTemp(tempActualAC); ac.setMode(kToshibaAcCool); ac.setFan(kToshibaAcFanAuto); } else ac.off();
         ac.send();
     }
+//    unsigned long tiempoFin = millis();
+  //  unsigned long duracionTotal = tiempoFin - tiempoInicio;
+
+    //String accionTexto = "Encender_o_CambiarTemp";
+//    if (!encender) {
+  //      accionTexto = "Apagar";
+    //}
+
+    //enviarLogAPI("Infrarrojo_AC", "Ataque_" + nombreMarca + "_" + accionTexto, duracionTotal); 
+
     delay(1000);
 }
 

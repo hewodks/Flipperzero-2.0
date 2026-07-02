@@ -44,5 +44,6 @@ void startHoneypot(int plantilla);
 void flujoServidorDatos(bool &dentroDeOpcion);
 void ssidSpamReal();
 void probeSnifferReal();
+void conectarRedAutoDesdeSD(String ssidObjetivo);
 
 #endif // WIFI_MODULE_H
